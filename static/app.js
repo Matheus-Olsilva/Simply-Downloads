@@ -37,19 +37,61 @@ let playerControlsTimeout = null;
 let isDraggingProgress = false;
 let currentPlaylist = [];
 let currentPlaylistIndex = -1;
+let heroVideo = null;
+let heroPlaylist = [];
+let heroSlides = [];
+let heroSlideIndex = 0;
+let heroSlideTimer = null;
 
 // ---------- tabs ----------
-document.querySelectorAll(".tab").forEach(t => {
-  t.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
-    t.classList.add("active");
-    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
-    $("view-" + t.dataset.view).classList.add("active");
-    
-    if (t.dataset.view === "library") loadLibrary();
-    if (t.dataset.view === "home") loadHome();
-  });
+function showView(view, { scrollTop = true } = {}) {
+  document.querySelectorAll(".tab").forEach(tab =>
+    tab.classList.toggle("active", tab.dataset.view === view));
+  document.querySelectorAll(".view").forEach(section =>
+    section.classList.toggle("active", section.id === "view-" + view));
+
+  if (view === "library") loadLibrary();
+  if (view === "home") loadHome();
+  if (scrollTop) window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => showView(tab.dataset.view));
 });
+
+$("heroDownloadAction").addEventListener("click", () => {
+  showView("download");
+  setTimeout(() => $("url").focus(), 350);
+});
+
+$("heroPrimaryAction").addEventListener("click", () => {
+  $("catalogContent").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+$("btnGlobalSearch").addEventListener("click", () => {
+  showView("home");
+  setTimeout(() => {
+    $("catalogSearch").focus();
+    $("catalogContent").scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 350);
+});
+
+function applyCatalogFilter() {
+  const query = $("catalogSearch").value.trim().toLocaleLowerCase("pt-BR");
+  document.querySelectorAll("#homeRows .home-row").forEach(row => {
+    let visibleCards = 0;
+    row.querySelectorAll(".lib-video").forEach(card => {
+      const title = card.querySelector(".lv-name")?.textContent || "";
+      const visible = !query || title.toLocaleLowerCase("pt-BR").includes(query);
+      card.classList.toggle("hidden", !visible);
+      if (visible) visibleCards++;
+    });
+    const locked = Boolean(row.querySelector(".lock-placeholder"));
+    row.classList.toggle("hidden", Boolean(query) && !locked && visibleCards === 0);
+  });
+}
+
+$("catalogSearch").addEventListener("input", applyCatalogFilter);
 
 // ---------- Analisar ----------
 $("btnInfo").addEventListener("click", analyze);
@@ -74,7 +116,7 @@ async function analyze() {
     $("infoError").classList.remove("hidden");
   } finally {
     $("btnInfo").disabled = false;
-    $("btnInfo").textContent = "Analisar";
+    $("btnInfo").textContent = "Analisar link";
   }
 }
 
@@ -417,7 +459,6 @@ async function toggleFolderVideos(el, folder) {
       let idx = 0;
       for (const v of data.videos) {
         const currentIdx = idx;
-        const randomMatch = Math.floor(Math.random() * 8) + 92;
         const resolutionBadge = v.name.includes("1080") ? "FHD" : (v.name.includes("2160") || v.name.includes("4k") || v.name.includes("4K") ? "4K" : "HD");
         const formatLabel = v.ext.replace(".", "").toUpperCase();
         const item = document.createElement("div");
@@ -425,12 +466,11 @@ async function toggleFolderVideos(el, folder) {
         item.innerHTML = `
           <div class="lv-thumb">
             <img loading="lazy" src="/api/thumb?path=${encodeURIComponent(v.path)}" alt="" onerror="this.style.display='none';this.parentElement.classList.add('nothumb')">
-            <div class="lv-thumb-hover-play">▶</div>
           </div>
           <div class="lv-details">
             <div class="lv-top"><span class="lv-name">${escapeHtml(v.name)}</span></div>
             <div class="lv-meta-row">
-              <span class="match-percentage">${randomMatch}% Match</span>
+              <span class="match-percentage">NA BIBLIOTECA</span>
               <span class="badge-hq">${resolutionBadge}</span>
               <span class="badge-ext">${formatLabel}</span>
               <span class="file-size">${fmtBytes(v.size)}</span>
@@ -492,6 +532,12 @@ async function loadHome() {
     const folders = await api("/api/library");
     const homeRows = $("homeRows");
     homeRows.innerHTML = "";
+    heroVideo = null;
+    heroPlaylist = [];
+    heroSlides = [];
+    heroSlideIndex = 0;
+    clearTimeout(heroSlideTimer);
+    resetHomeHero();
     
     if (!folders.length) {
       $("emptyHome").classList.remove("hidden");
@@ -553,10 +599,14 @@ async function loadHome() {
           if (!data.videos.length) {
             vidsContainer.innerHTML = '<div class="empty-state">Nenhum vídeo nesta pasta.</div>';
           } else {
+            heroSlides.push(...data.videos.map(video => ({
+              video,
+              playlist: data.videos,
+              folderName
+            })));
             let idx = 0;
             for (const v of data.videos) {
               const currentIdx = idx;
-              const randomMatch = Math.floor(Math.random() * 8) + 92;
               const resolutionBadge = v.name.includes("1080") ? "FHD" : (v.name.includes("2160") || v.name.includes("4k") || v.name.includes("4K") ? "4K" : "HD");
               const formatLabel = v.ext.replace(".", "").toUpperCase();
               const item = document.createElement("div");
@@ -564,12 +614,11 @@ async function loadHome() {
               item.innerHTML = `
                 <div class="lv-thumb">
                   <img loading="lazy" src="/api/thumb?path=${encodeURIComponent(v.path)}" alt="" onerror="this.style.display='none';this.parentElement.classList.add('nothumb')">
-                  <div class="lv-thumb-hover-play">▶</div>
                 </div>
                 <div class="lv-details">
                   <div class="lv-top"><span class="lv-name">${escapeHtml(v.name)}</span></div>
                   <div class="lv-meta-row">
-                    <span class="match-percentage">${randomMatch}% Match</span>
+                    <span class="match-percentage">NA BIBLIOTECA</span>
                     <span class="badge-hq">${resolutionBadge}</span>
                     <span class="badge-ext">${formatLabel}</span>
                     <span class="file-size">${fmtBytes(v.size)}</span>
@@ -582,6 +631,11 @@ async function loadHome() {
                 </div>`;
               item.querySelector(".play").addEventListener("click", () => playVideo(v.path, v.name, data.videos, currentIdx));
               item.querySelector(".del").addEventListener("click", () => deleteVideo(v, item, row, f.path));
+              item.addEventListener("click", (event) => {
+                if (event.target.closest(".lv-actions")) return;
+                setHomeHero(v, data.videos, folderName);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              });
               vidsContainer.appendChild(item);
               idx++;
             }
@@ -599,10 +653,55 @@ async function loadHome() {
         }
       }
     }
+    if (heroSlides.length) {
+      setHomeHero(heroSlides[0].video, heroSlides[0].playlist, heroSlides[0].folderName);
+      startHeroSlideshow();
+    }
+    applyCatalogFilter();
   } catch (e) {
     console.error(e);
     $("emptyHome").classList.remove("hidden");
   }
+}
+
+function cleanDisplayTitle(name) {
+  return String(name || "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[._]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resetHomeHero() {
+  $("homeHeroTitle").innerHTML = "Sua biblioteca.<br>Do seu jeito.";
+  $("homeHeroDescription").textContent = "Organize seus vídeos em coleções, continue assistindo quando quiser e mantenha tudo no seu próprio dispositivo.";
+  $("heroPrimaryAction").innerHTML = '<span aria-hidden="true">▶</span> Explorar catálogo';
+  const art = $("homeHeroArt");
+  art.classList.remove("has-image");
+  art.style.backgroundImage = "";
+}
+
+function startHeroSlideshow() {
+  clearTimeout(heroSlideTimer);
+  if (heroSlides.length < 2 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  heroSlideTimer = setTimeout(() => {
+    heroSlideIndex = (heroSlideIndex + 1) % heroSlides.length;
+    const slide = heroSlides[heroSlideIndex];
+    setHomeHero(slide.video, slide.playlist, slide.folderName);
+    startHeroSlideshow();
+  }, 6500);
+}
+
+function setHomeHero(video, playlist, folderName) {
+  heroVideo = video;
+  heroPlaylist = playlist;
+  $("homeHeroTitle").textContent = cleanDisplayTitle(video.name) || "Em destaque";
+  $("homeHeroDescription").textContent = `Em destaque na coleção ${folderName}. Pronto para assistir diretamente da sua biblioteca local.`;
+  $("heroPrimaryAction").innerHTML = '<span aria-hidden="true">▦</span> Ver catálogo';
+  const art = $("homeHeroArt");
+  art.classList.remove("has-image");
+  art.style.backgroundImage = `url("/api/thumb?path=${encodeURIComponent(video.path)}")`;
+  requestAnimationFrame(() => requestAnimationFrame(() => art.classList.add("has-image")));
 }
 
 // ---------- Modais de Senha / Privacidade ----------

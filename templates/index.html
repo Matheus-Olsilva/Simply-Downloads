@@ -3,60 +3,102 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simply Downloads — Filmes, Séries e Downloads Ilimitados</title>
-  <!-- Importando a fonte Inter do Google Fonts para visual premium -->
+  <title>Simply — Sua biblioteca, do seu jeito</title>
+  <meta name="theme-color" content="#07070a">
+  <meta name="color-scheme" content="dark">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <!-- Header / Barra de Navegação Estilo Netflix -->
+  <!-- Navegação principal -->
   <header class="topbar" id="topbar">
-    <div class="brand">
-      <span class="logo-text">SIMPLY<span class="highlight">DOWNLOADS</span></span>
+    <div class="brand" aria-label="Simply">
+      <span class="brand-mark" aria-hidden="true">S</span>
+      <span class="logo-text">SIMPLY</span>
     </div>
-    <nav class="tabs">
-      <button class="tab active" data-view="home">Início</button>
-      <button class="tab" data-view="download">Baixar Vídeos</button>
-      <button class="tab" data-view="library">Biblioteca</button>
+    <nav class="tabs" aria-label="Navegação principal">
+      <button class="tab active" data-view="home">
+        <span class="tab-icon" aria-hidden="true">⌂</span><span>Início</span>
+      </button>
+      <button class="tab" data-view="download">
+        <span class="tab-icon" aria-hidden="true">↓</span><span>Baixar</span>
+      </button>
+      <button class="tab" data-view="library">
+        <span class="tab-icon" aria-hidden="true">▦</span><span>Biblioteca</span>
+      </button>
     </nav>
     <div class="topbar-right">
-      <button class="topbar-icon" title="Buscar">
+      <button class="topbar-icon" id="btnGlobalSearch" title="Buscar no catálogo" aria-label="Buscar no catálogo">
         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
       </button>
-      <button class="topbar-icon" title="Notificações">
-        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
-      </button>
       <div class="profile-avatar-container">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/0/0b/Netflix-avatar.png" alt="Profile" class="profile-avatar">
+        <span class="profile-avatar" aria-label="Perfil local">M</span>
       </div>
     </div>
   </header>
 
   <main>
-    <!-- ===================== VIEW: INÍCIO (Netflix rows grouped by folder) ===================== -->
+    <!-- ===================== VIEW: INÍCIO ===================== -->
     <section id="view-home" class="view active">
-      <div class="home-header">
-        <h1 class="home-title">Catálogo Local</h1>
+      <div class="catalog-hero" id="homeHero">
+        <div class="catalog-hero-art" id="homeHeroArt"></div>
+        <div class="catalog-hero-shade"></div>
+        <div class="catalog-hero-content">
+          <span class="eyebrow"><i></i> SUA COLEÇÃO PARTICULAR</span>
+          <h1 id="homeHeroTitle">Sua biblioteca.<br>Do seu jeito.</h1>
+          <div class="hero-meta">
+            <span class="hero-rating">L</span>
+            <span>Reprodução local</span>
+            <span>Alta qualidade</span>
+          </div>
+          <p id="homeHeroDescription">Organize seus vídeos em coleções, continue assistindo quando quiser e mantenha tudo no seu próprio dispositivo.</p>
+          <div class="hero-actions">
+            <button id="heroPrimaryAction" class="hero-btn hero-btn-primary">
+              <span aria-hidden="true">▶</span> Explorar catálogo
+            </button>
+            <button id="heroDownloadAction" class="hero-btn hero-btn-secondary">
+              <span aria-hidden="true">＋</span> Adicionar vídeo
+            </button>
+          </div>
+        </div>
       </div>
-      <div id="homeRows" class="home-rows"></div>
-      <div id="emptyHome" class="empty-state hidden">Nenhuma pasta na biblioteca ainda. Vá em Biblioteca ou Baixar Vídeos para começar.</div>
+
+      <div class="home-content" id="catalogContent">
+        <div class="home-header">
+          <div>
+            <span class="section-kicker">MINHA LISTA</span>
+            <h2 class="home-title">Catálogo local</h2>
+          </div>
+          <label class="catalog-search">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9.5 3a6.5 6.5 0 1 0 3.98 11.64L19.85 21 21 19.85l-6.36-6.37A6.5 6.5 0 0 0 9.5 3zm0 2a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9z"/></svg>
+            <input id="catalogSearch" type="search" placeholder="Buscar títulos" autocomplete="off">
+          </label>
+        </div>
+        <div id="homeRows" class="home-rows"></div>
+        <div id="emptyHome" class="empty-state hidden">Sua estante está vazia. Adicione uma pasta ou baixe seu primeiro vídeo.</div>
+      </div>
     </section>
 
     <!-- ===================== VIEW: BAIXAR VÍDEOS ===================== -->
     <section id="view-download" class="view">
-      <!-- Billboard / Hero Banner -->
+      <!-- Área principal de download -->
       <div class="billboard">
+        <div class="billboard-orb billboard-orb-one"></div>
+        <div class="billboard-orb billboard-orb-two"></div>
         <div class="billboard-overlay"></div>
         <div class="billboard-content">
-          <h1 class="billboard-title">Filmes, séries e downloads ilimitados.</h1>
-          <p class="billboard-subtitle">Cole o link do vídeo abaixo, analise e salve na sua biblioteca.</p>
-          
+          <span class="eyebrow"><i></i> NOVO DOWNLOAD</span>
+          <h1 class="billboard-title">Traga seus vídeos<br>para a sua tela.</h1>
+          <p class="billboard-subtitle">Cole um link compatível, escolha a qualidade e salve diretamente na sua biblioteca pessoal.</p>
+
           <div class="search-box">
-            <input type="text" id="url" placeholder="Insira o link do vídeo ou playlist (.m3u8, YouTube, etc.)" autocomplete="off">
-            <button id="btnInfo" class="primary big">Analisar</button>
+            <span class="search-link-icon" aria-hidden="true">↗</span>
+            <input type="text" id="url" placeholder="Cole o link do vídeo aqui" autocomplete="off">
+            <button id="btnInfo" class="primary big">Analisar link</button>
           </div>
+          <p class="search-hint">Compatível com os sites e formatos aceitos pelo yt-dlp. Conteúdos protegidos por DRM não são suportados.</p>
           <div id="infoError" class="error hidden"></div>
         </div>
       </div>
@@ -95,7 +137,12 @@
 
       <!-- Fila de Downloads -->
       <div class="row-container">
-        <h2 class="row-title">Fila de Downloads</h2>
+        <div class="section-heading">
+          <div>
+            <span class="section-kicker">ATIVIDADE</span>
+            <h2 class="row-title">Fila de downloads</h2>
+          </div>
+        </div>
         <div id="queue" class="queue-list"></div>
         <div id="emptyQueue" class="empty-state">Nenhum download em andamento.</div>
       </div>
@@ -104,7 +151,11 @@
     <!-- ===================== VIEW: BIBLIOTECA (Gerenciamento de Pastas) ===================== -->
     <section id="view-library" class="view">
       <div class="library-header">
-        <h1 class="library-title">Gerenciar Pastas</h1>
+        <div>
+          <span class="section-kicker">ORGANIZAÇÃO</span>
+          <h1 class="library-title">Gerenciar pastas</h1>
+          <p class="library-subtitle">Escolha quais coleções aparecem no seu catálogo.</p>
+        </div>
         <div class="library-controls">
           <button id="btnRefreshLib" class="ghost small">Atualizar</button>
           <button id="btnClearHistory" class="ghost small danger-text">Limpar Histórico</button>

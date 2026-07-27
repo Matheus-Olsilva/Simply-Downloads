@@ -377,7 +377,8 @@ def generate_thumb(path: str) -> str | None:
         st = os.stat(path)
     except OSError:
         return None
-    key = f"{path}|{st.st_mtime}|{st.st_size}"
+    # v2 invalida o cache antigo de 320px e gera uma imagem nítida para o hero.
+    key = f"thumb-v2|{path}|{st.st_mtime}|{st.st_size}"
     h = hashlib.md5(key.encode("utf-8")).hexdigest()
     os.makedirs(THUMB_DIR, exist_ok=True)
     out = os.path.join(THUMB_DIR, h + ".jpg")
@@ -388,7 +389,7 @@ def generate_thumb(path: str) -> str | None:
     cmd = ["ffmpeg", "-y", "-v", "error"]
     if seek > 0:
         cmd += ["-ss", str(seek)]
-    cmd += ["-i", path, "-frames:v", "1", "-vf", "scale=320:-2", "-q:v", "4", out]
+    cmd += ["-i", path, "-frames:v", "1", "-vf", "scale=1280:-2", "-q:v", "2", out]
     try:
         subprocess.run(cmd, capture_output=True, timeout=60)
     except Exception:
