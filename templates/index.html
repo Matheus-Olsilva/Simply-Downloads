@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simply Downloads — Filmes, Séries e Downloads Ilimitados</title>
+  <!-- Importando a fonte Inter do Google Fonts para visual premium -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Header / Barra de Navegação Estilo Netflix -->
+  <header class="topbar" id="topbar">
+    <div class="brand">
+      <span class="logo-text">SIMPLY<span class="highlight">DOWNLOADS</span></span>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-view="home">Início</button>
+      <button class="tab" data-view="download">Baixar Vídeos</button>
+      <button class="tab" data-view="library">Biblioteca</button>
+    </nav>
+    <div class="topbar-right">
+      <button class="topbar-icon" title="Buscar">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      </button>
+      <button class="topbar-icon" title="Notificações">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+      </button>
+      <div class="profile-avatar-container">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/0/0b/Netflix-avatar.png" alt="Profile" class="profile-avatar">
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ===================== VIEW: INÍCIO (Netflix rows grouped by folder) ===================== -->
+    <section id="view-home" class="view active">
+      <div class="home-header">
+        <h1 class="home-title">Catálogo Local</h1>
+      </div>
+      <div id="homeRows" class="home-rows"></div>
+      <div id="emptyHome" class="empty-state hidden">Nenhuma pasta na biblioteca ainda. Vá em Biblioteca ou Baixar Vídeos para começar.</div>
+    </section>
+
+    <!-- ===================== VIEW: BAIXAR VÍDEOS ===================== -->
+    <section id="view-download" class="view">
+      <!-- Billboard / Hero Banner -->
+      <div class="billboard">
+        <div class="billboard-overlay"></div>
+        <div class="billboard-content">
+          <h1 class="billboard-title">Filmes, séries e downloads ilimitados.</h1>
+          <p class="billboard-subtitle">Cole o link do vídeo abaixo, analise e salve na sua biblioteca.</p>
+          
+          <div class="search-box">
+            <input type="text" id="url" placeholder="Insira o link do vídeo ou playlist (.m3u8, YouTube, etc.)" autocomplete="off">
+            <button id="btnInfo" class="primary big">Analisar</button>
+          </div>
+          <div id="infoError" class="error hidden"></div>
+        </div>
+      </div>
+
+      <!-- Resultado da Análise (Estilo Popover/Card Netflix) -->
+      <div id="downloadCard" class="card glass hidden fade-in">
+        <div class="info-head">
+          <div class="thumb-container">
+            <img id="thumb" alt="Thumbnail do Vídeo" class="thumb hidden">
+            <div class="thumb-overlay"></div>
+          </div>
+          <div class="info-text">
+            <div id="infoTitle" class="info-title"></div>
+            <div id="infoMeta" class="info-meta"></div>
+          </div>
+        </div>
+        
+        <div class="download-settings">
+          <div class="form-row">
+            <label for="format">Qualidade de Vídeo</label>
+            <select id="format"></select>
+          </div>
+          <div class="form-row">
+            <label for="outDir">Destino</label>
+            <div class="input-action-group">
+              <input type="text" id="outDir" readonly>
+              <button id="btnBrowse" class="ghost">📁 Alterar</button>
+            </div>
+            <div id="recentDirsList" class="recent-dirs-list"></div>
+          </div>
+          <div class="form-row action-row">
+            <button id="btnAdd" class="primary big">➕ Adicionar à Fila</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fila de Downloads -->
+      <div class="row-container">
+        <h2 class="row-title">Fila de Downloads</h2>
+        <div id="queue" class="queue-list"></div>
+        <div id="emptyQueue" class="empty-state">Nenhum download em andamento.</div>
+      </div>
+    </section>
+
+    <!-- ===================== VIEW: BIBLIOTECA (Gerenciamento de Pastas) ===================== -->
+    <section id="view-library" class="view">
+      <div class="library-header">
+        <h1 class="library-title">Gerenciar Pastas</h1>
+        <div class="library-controls">
+          <button id="btnRefreshLib" class="ghost small">Atualizar</button>
+          <button id="btnClearHistory" class="ghost small danger-text">Limpar Histórico</button>
+        </div>
+      </div>
+      
+      <div id="library" class="library-grid"></div>
+      <div id="emptyLibrary" class="empty-state">Sua biblioteca de pastas está vazia. Adicione pastas onde você já possui vídeos.</div>
+    </section>
+  </main>
+
+  <!-- Modal Navegador de Pastas (Salvar Arquivos) -->
+  <div id="folderModal" class="modal hidden">
+    <div class="modal-content wide">
+      <div class="modal-head">
+        <h3>Escolher pasta de destino</h3>
+        <button id="modalClose" class="modal-close-btn">✕</button>
+      </div>
+      
+      <!-- Campo de busca para filtrar subpastas -->
+      <div class="folder-search-box">
+        <input type="text" id="dirSearch" placeholder="🔍 Filtrar pastas nesta lista..." autocomplete="off">
+      </div>
+      
+      <div class="folder-browser-body">
+        <!-- Sidebar de Locais Rápidos -->
+        <aside class="folder-sidebar">
+          <h4 class="sidebar-title">Locais</h4>
+          <button id="goHome" class="sidebar-item">🏠 Início (Home)</button>
+          <button id="goDisks" class="sidebar-item">💾 Discos (Mídias)</button>
+          <button id="goUp" class="sidebar-item">↑ Subir Diretório</button>
+          <button id="btnMkdir" class="sidebar-item primary-sidebar-btn">＋ Nova Pasta</button>
+        </aside>
+        
+        <!-- Conteúdo do Explorador -->
+        <div class="folder-explorer-main">
+          <div id="currentPath" class="path"></div>
+          <div id="disksList" class="disks-list hidden"></div>
+          <div id="dirList" class="dir-grid"></div>
+        </div>
+      </div>
+      
+      <div class="modal-footer" style="margin-top: 15px;">
+        <button id="selectFolder" class="primary">Selecionar Esta Pasta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Player de Vídeo Cinema (Netflix-style Custom Player) -->
+  <div id="playerModal" class="modal hidden">
+    <div class="player-container" id="playerContainer">
+      <video id="player" playsinline></video>
+      
+      <!-- Controles Customizados -->
+      <div class="player-overlay" id="playerOverlay">
+        <!-- Barra Superior (Voltar e Informações) -->
+        <div class="player-top-bar">
+          <button id="playerClose" class="back-btn" title="Voltar para a biblioteca">
+            <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+            <span>Voltar</span>
+          </button>
+          <div class="player-info">
+            <h2 id="playerTitle">Nome do Vídeo</h2>
+            <span id="playerPath" class="player-subtitle">/caminho/do/arquivo</span>
+          </div>
+        </div>
+        
+        <!-- Botão Play/Pause Central Flutuante -->
+        <div class="player-center-btn" id="playerCenterBtn">
+          <svg viewBox="0 0 24 24" width="60" height="60" class="play-svg"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+          <svg viewBox="0 0 24 24" width="60" height="60" class="pause-svg hidden"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        </div>
+        
+        <!-- Barra Inferior de Controle -->
+        <div class="player-bottom-bar">
+          <!-- Seek Bar (Progresso) -->
+          <div class="player-progress-container" id="progressContainer">
+            <div class="player-progress-hover" id="progressHover"></div>
+            <div class="player-progress-bar" id="progressBar"></div>
+            <div class="player-progress-handle" id="progressHandle"></div>
+          </div>
+          
+          <!-- Controles de Ações -->
+          <div class="player-controls-row">
+            <div class="controls-left">
+              <!-- Play/Pause -->
+              <button id="btnPlayPause" class="ctrl-btn" title="Play/Pause">
+                <svg viewBox="0 0 24 24" width="24" height="24" class="play-icon"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+                <svg viewBox="0 0 24 24" width="24" height="24" class="pause-icon hidden"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+              </button>
+              
+              <!-- Voltar 10s -->
+              <button id="btnRewind" class="ctrl-btn" title="Recuar 10 segundos">
+                <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 5V1L7 6l5 5V7c3.3 0 6 2.7 6 6s-2.7 6-6 6-6-2.7-6-6H4c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8zm-1.3 6h-1v4.8h1V11z"/></svg>
+              </button>
+              
+              <!-- Avançar 10s -->
+              <button id="btnForward" class="ctrl-btn" title="Avançar 10 segundos">
+                <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 5c4.4 0 8 3.6 8 8s-3.6 8-8 8-8-3.6-8-8h2c0 3.3 2.7 6 6 6s6-2.7 6-6-2.7-6-6-6v4l-5-5 5-5V5zm1.3 6h-1v4.8h1V11z"/></svg>
+              </button>
+              
+              <!-- Próximo Vídeo -->
+              <button id="btnNext" class="ctrl-btn" title="Próximo Vídeo">
+                <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+              </button>
+              
+              <!-- Volume -->
+              <div class="volume-container">
+                <button id="btnMute" class="ctrl-btn" title="Silenciar/Ativar som">
+                  <svg viewBox="0 0 24 24" width="24" height="24" class="vol-high-icon"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                  <svg viewBox="0 0 24 24" width="24" height="24" class="vol-mute-icon hidden"><path fill="currentColor" d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.03c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73 4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+                </button>
+                <input type="range" id="vol" class="vol-slider" min="0" max="1" step="0.05" value="1">
+              </div>
+              
+              <!-- Tempo do Vídeo -->
+              <div class="time-display">
+                <span id="currentTime">0:00</span>
+                <span class="divider">/</span>
+                <span id="durationTime">0:00</span>
+              </div>
+            </div>
+            
+            <div class="controls-right">
+              <!-- Modo Cinema -->
+              <button id="btnTheater" class="ctrl-btn" title="Modo Cinema">
+                <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M19 19H5V5h14v14zm0-16H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>
+              </button>
+              <!-- Tela Cheia -->
+              <button id="btnFullscreen" class="ctrl-btn" title="Tela Cheia">
+                <svg viewBox="0 0 24 24" width="24" height="24" class="fs-enter"><path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+                <svg viewBox="0 0 24 24" width="24" height="24" class="fs-exit hidden"><path fill="currentColor" d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal PIN / Senha para Desbloquear Pasta -->
+  <div id="passwordModal" class="modal hidden">
+    <div class="modal-content small-modal">
+      <div class="modal-head">
+        <h3>Desbloquear Pasta</h3>
+        <button id="passwordModalClose" class="modal-close-btn">✕</button>
+      </div>
+      <p class="modal-desc" id="passwordModalDesc"></p>
+      <div class="form-row" style="margin: 15px 0;">
+        <label for="unlockPassword">Digite a senha da pasta</label>
+        <input type="password" id="unlockPassword" placeholder="••••" style="text-align: center; font-size: 1.25rem; letter-spacing: 2px;">
+        <div id="unlockError" style="color: var(--err-color); font-size: 0.85rem; margin-top: 5px; display: none;"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnConfirmUnlock" class="primary">Desbloquear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal para Configurar Privacidade e Senha -->
+  <div id="privacyModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-head">
+        <h3>Configurar Privacidade</h3>
+        <button id="privacyModalClose" class="modal-close-btn">✕</button>
+      </div>
+      <p class="modal-desc" id="privacyModalDesc" style="font-family: monospace; font-size: 0.8rem; margin-bottom: 15px; color: var(--text-muted);"></p>
+      
+      <div class="privacy-settings-form">
+        <!-- Senha atual (apenas se a pasta já for privada) -->
+        <div class="form-row" id="rowCurrentPassword" style="display: none; margin-bottom: 12px;">
+          <label for="privacyCurrentPassword">Senha Atual</label>
+          <input type="password" id="privacyCurrentPassword" placeholder="Digite a senha atual da pasta">
+        </div>
+
+        <!-- Checkbox para ativar/desativar privacidade -->
+        <div class="form-row-checkbox" style="display: flex; align-items: center; gap: 10px; margin: 15px 0;">
+          <input type="checkbox" id="privacyEnabled" style="width: 18px; height: 18px; cursor: pointer;">
+          <label for="privacyEnabled" style="cursor: pointer; font-weight: 600; font-size: 0.95rem;">Tornar esta pasta Privada (protegida por senha)</label>
+        </div>
+
+        <!-- Nova Senha -->
+        <div id="privacyPasswordFields" style="display: none;">
+          <div class="form-row" style="margin-bottom: 12px;">
+            <label for="privacyPassword">Nova Senha</label>
+            <input type="password" id="privacyPassword" placeholder="Defina uma senha">
+          </div>
+          <div class="form-row" style="margin-bottom: 12px;">
+            <label for="privacyConfirmPassword">Confirmar Nova Senha</label>
+            <input type="password" id="privacyConfirmPassword" placeholder="Confirme a senha">
+          </div>
+        </div>
+
+        <div id="privacyError" style="color: var(--err-color); font-size: 0.85rem; margin-top: 10px; display: none;"></div>
+      </div>
+
+      <div class="modal-footer" style="margin-top: 20px;">
+        <button id="btnSavePrivacy" class="primary">Salvar Configurações</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

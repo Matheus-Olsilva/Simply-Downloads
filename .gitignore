@@ -1,0 +1,43 @@
+# Imagens
+*.[pP][nN][gG]
+*.[jJ][pP][gG]
+*.[jJ][pP][eE][gG]
+*.[gG][iI][fF]
+*.[wW][eE][bB][pP]
+*.[bB][mM][pP]
+*.[tT][iI][fF]
+*.[iI][cC][oO]
+*.[sS][vV][gG]
+
+# Vídeos
+*.[mM][pP]4
+*.[mM][kK][vV]
+*.[wW][eE][bB][mM]
+*.[aA][vV][iI]
+*.[mM][oO][vV]
+*.[mM]4[vV]
+*.[tT][sS]
+*.[fF][lL][vV]
+*.[wW][mM][vV]
+*.[mM][pP][gG]
+*.[mM][pP][eE][gG]
+*.[oO][gG][vV]
+*.[3][gG][pP]
+
+# Cache e arquivos temporários gerados pelo aplicativo
+.thumbs/
+.playcache/
+*.part
+*.ytdl
+
+# Arquivos locais de configuração/estado
+config.json
+folders_config.json
+library.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
