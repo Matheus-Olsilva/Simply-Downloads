@@ -827,6 +827,59 @@ select:focus, input[type="text"]:focus {
   opacity: 0.6;
 }
 
+/* Ação direta nas miniaturas e indicador da posição salva. */
+.thumbnail-watch-now {
+  position: absolute;
+  z-index: 4;
+  left: 14px;
+  bottom: 14px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 6px;
+  background: rgba(8, 8, 12, 0.84);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  opacity: 0;
+  transform: translateY(5px);
+  transition: opacity .2s ease, transform .2s ease, background .2s ease;
+  backdrop-filter: blur(8px);
+}
+
+.lib-video:hover .thumbnail-watch-now,
+.lib-video:focus-within .thumbnail-watch-now {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.thumbnail-watch-now:hover {
+  background: #fff;
+  color: #09090b;
+}
+
+@media (hover: none) {
+  .thumbnail-watch-now {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.watch-progress {
+  position: absolute;
+  z-index: 5;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, .24);
+}
+
+.watch-progress i {
+  display: block;
+  height: 100%;
+  background: var(--netflix-red);
+}
+
 /* Detalhes do vídeo sob a miniatura */
 .lib-video .lv-details {
   padding: 12px;
@@ -3284,6 +3337,10 @@ input[type="password"]:focus {
   transform: translateY(-5px) scale(1.02);
 }
 
+.recent-overflow {
+  display: none !important;
+}
+
 /* Há uma única ação de reprodução por card: o botão nos detalhes. */
 .lv-thumb-hover-play {
   display: none !important;
@@ -3304,5 +3361,275 @@ input[type="password"]:focus {
 @media (max-width: 430px) {
   .home-row .lib-videos {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Biblioteca: explorador completo, sem o carrossel horizontal antigo. */
+.library-grid {
+  gap: 22px;
+}
+
+.lib-folder {
+  padding: clamp(18px, 2.2vw, 30px);
+}
+
+.lf-card-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+}
+
+.lib-folder .lf-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  border-radius: 14px;
+  font-size: 1.55rem;
+  background: linear-gradient(145deg, rgba(139, 92, 246, .26), rgba(239, 35, 60, .16));
+  border: 1px solid rgba(255, 255, 255, .1);
+}
+
+.lf-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lib-folder .lf-name {
+  font-family: inherit;
+  font-size: 1.12rem;
+  word-break: break-word;
+}
+
+.lf-path {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-family: monospace;
+  font-size: .76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-folder .lf-count {
+  margin: 9px 0 0;
+}
+
+.lf-badges {
+  padding-top: 3px;
+}
+
+.icon-action {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.icon-action:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, .1);
+}
+
+.lib-folder .lf-actions {
+  flex-wrap: wrap;
+  margin: 22px 0 0;
+}
+
+.library-content {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, .09);
+}
+
+.library-content-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.library-breadcrumb {
+  min-width: 0;
+  color: #d8d8df;
+  font-family: monospace;
+  font-size: .8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.library-content-summary {
+  margin: 15px 0 12px;
+  color: var(--text-muted);
+  font-size: .82rem;
+}
+
+.library-content-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+}
+
+.library-directory {
+  min-height: 150px;
+  padding: 18px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 7px;
+  color: #fff;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 13px;
+  background: linear-gradient(145deg, rgba(139, 92, 246, .16), rgba(255, 255, 255, .045));
+}
+
+.library-directory:hover {
+  transform: translateY(-4px);
+  border-color: rgba(188, 112, 255, .62);
+  background: linear-gradient(145deg, rgba(139, 92, 246, .3), rgba(239, 35, 60, .1));
+  box-shadow: 0 14px 28px rgba(0, 0, 0, .27);
+}
+
+.library-directory-icon {
+  margin-bottom: auto;
+  font-size: 2.05rem;
+}
+
+.library-directory-name {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 750;
+}
+
+.library-directory-action {
+  color: #d7c8ff;
+  font-size: .75rem;
+  font-weight: 700;
+}
+
+.library-video-card {
+  width: auto;
+  min-width: 0;
+  flex: none;
+}
+
+.library-video-card:hover {
+  transform: translateY(-4px) scale(1.01);
+}
+
+.lv-actions .edit {
+  color: #d7c8ff;
+  background: rgba(139, 92, 246, .16);
+}
+
+.lv-actions .edit:hover {
+  background: rgba(139, 92, 246, .34);
+}
+
+.inline-rename {
+  display: flex;
+  width: 100%;
+  gap: 5px;
+  align-items: center;
+}
+
+.inline-rename input,
+.new-folder-form input {
+  min-width: 0;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid rgba(188, 112, 255, .7);
+  border-radius: 7px;
+  background: #0d0d12;
+  color: #fff;
+  font: inherit;
+}
+
+.inline-rename button {
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+}
+
+.inline-rename .save {
+  background: var(--stream-gradient);
+}
+
+.new-folder-form {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0 2px;
+}
+
+.new-folder-form input {
+  max-width: 285px;
+}
+
+.library-loading {
+  padding: 22px 4px;
+  color: var(--text-muted);
+}
+
+.library-empty {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 720px) {
+  .lf-card-head {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .lf-badges {
+    grid-column: 2;
+  }
+
+  .library-content-toolbar {
+    grid-template-columns: auto 1fr;
+  }
+
+  .content-new-folder {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .library-content-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .new-folder-form {
+    flex-wrap: wrap;
+  }
+
+  .new-folder-form input {
+    min-width: 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 430px) {
+  .library-content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lf-path {
+    white-space: normal;
+    overflow: visible;
   }
 }

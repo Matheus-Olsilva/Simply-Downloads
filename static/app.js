@@ -42,6 +42,8 @@ let heroPlaylist = [];
 let heroSlides = [];
 let heroSlideIndex = 0;
 let heroSlideTimer = null;
+let pendingResumePosition = 0;
+let lastProgressSave = 0;
 
 // ---------- tabs ----------
 function showView(view, { scrollTop = true } = {}) {
@@ -65,6 +67,11 @@ $("heroDownloadAction").addEventListener("click", () => {
 });
 
 $("heroPrimaryAction").addEventListener("click", () => {
+  if (heroVideo) {
+    const index = heroPlaylist.findIndex(video => video.path === heroVideo.path);
+    playVideo(heroVideo.path, heroVideo.name, heroPlaylist, index);
+    return;
+  }
   $("catalogContent").scrollIntoView({ behavior: "smooth", block: "start" });
 });
 
@@ -81,6 +88,12 @@ function applyCatalogFilter() {
   document.querySelectorAll("#homeRows .home-row").forEach(row => {
     let visibleCards = 0;
     row.querySelectorAll(".lib-video").forEach(card => {
+      if (card.classList.contains("recent-overflow")) {
+        // A classe própria controla o corte por linhas; não a transforme em
+        // .hidden, pois isso atrapalha recalcular o grid ao redimensionar.
+        card.classList.remove("hidden");
+        return;
+      }
       const title = card.querySelector(".lv-name")?.textContent || "";
       const visible = !query || title.toLocaleLowerCase("pt-BR").includes(query);
       card.classList.toggle("hidden", !visible);
@@ -92,6 +105,26 @@ function applyCatalogFilter() {
 }
 
 $("catalogSearch").addEventListener("input", applyCatalogFilter);
+
+function limitRecentVideoRows(row) {
+  const cards = [...row.querySelectorAll(".lib-video")];
+  cards.forEach(card => card.classList.remove("recent-overflow"));
+
+  // Mede quantos cards cabem na primeira linha e mantém no máximo duas linhas.
+  const visibleCards = cards.filter(card => !card.classList.contains("hidden"));
+  if (!visibleCards.length) return;
+  const firstTop = visibleCards[0].offsetTop;
+  const cardsPerRow = visibleCards.filter(card => Math.abs(card.offsetTop - firstTop) <= 1).length;
+  visibleCards.slice(cardsPerRow * 2).forEach(card => card.classList.add("recent-overflow"));
+}
+
+window.addEventListener("resize", () => {
+  const row = document.querySelector(".continue-row");
+  if (row) {
+    limitRecentVideoRows(row);
+    applyCatalogFilter();
+  }
+});
 
 // ---------- Analisar ----------
 $("btnInfo").addEventListener("click", analyze);
@@ -389,19 +422,26 @@ async function loadLibrary() {
         : '';
 
       el.innerHTML = `
-        <div class="lf-icon">📁</div>
-        <div class="lf-name">${escapeHtml(f.path)}</div>
-        <div class="lf-count">${contentText}</div>
-        <div style="margin: 8px 0 14px 0; display: flex; align-items: center; gap: 6px;">
-          ${privacyBadge}
+        <div class="lf-card-head">
+          <div class="lf-icon">📁</div>
+          <div class="lf-heading">
+            <div class="lf-name-row">
+              <span class="lf-name" title="${escapeHtml(f.path)}">${escapeHtml(getFolderName(f.path))}</span>
+              <button class="icon-action rename-library" title="Renomear biblioteca" aria-label="Renomear biblioteca">✎</button>
+            </div>
+            <div class="lf-path">${escapeHtml(f.path)}</div>
+            <div class="lf-count">${contentText}</div>
+          </div>
+          <div class="lf-badges">${privacyBadge}</div>
         </div>
         <div class="lf-actions">
           <button class="ghost small open">${openBtnText}</button>
+          <button class="ghost small new-child">＋ Nova pasta</button>
           <button class="ghost small privacy">⚙️ Segurança</button>
           <button class="ghost small rm danger-text">Remover</button>
           ${lockUnlockBtn}
         </div>
-        <div class="lib-videos hidden"></div>`;
+        <div class="library-content hidden"></div>`;
         
       lib.appendChild(el);
       
@@ -410,8 +450,29 @@ async function loadLibrary() {
         if (f.private && f.locked) {
           showUnlockModal(f.path);
         } else {
-          toggleFolderVideos(el, f.path); 
+          toggleFolderVideos(el, f.path);
         }
+      });
+
+      el.querySelector(".new-child").addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (f.private && f.locked) return showUnlockModal(f.path);
+        const box = el.querySelector(".library-content");
+        if (box.classList.contains("hidden")) await toggleFolderVideos(el, f.path);
+        showNewFolderEditor(el, box.dataset.currentPath || f.path);
+      });
+
+      el.querySelector(".rename-library").addEventListener("click", (e) => {
+        e.stopPropagation();
+        const label = el.querySelector(".lf-name");
+        showInlineNameEditor(label, getFolderName(f.path), async (name) => {
+          await api("/api/library", {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: f.path, name })
+          });
+          await loadLibrary();
+          loadHome();
+        });
       });
       
       el.querySelector(".privacy").addEventListener("click", (e) => {
@@ -443,57 +504,120 @@ async function loadLibrary() {
 }
 
 async function toggleFolderVideos(el, folder) {
-  const box = el.querySelector(".lib-videos");
+  const box = el.querySelector(".library-content");
   const btn = el.querySelector(".open");
   if (!box.classList.contains("hidden")) {
     box.classList.add("hidden"); btn.textContent = "Ver Conteúdo"; el.classList.remove("expanded");
     return;
   }
   btn.textContent = "Carregando...";
+  box.classList.remove("hidden");
+  el.classList.add("expanded");
+  await renderLibraryContent(el, folder);
+  btn.textContent = "Fechar";
+}
+
+function showInlineNameEditor(label, currentName, save) {
+  if (label.querySelector("input")) return;
+  label.textContent = "";
+  const form = document.createElement("form");
+  form.className = "inline-rename";
+  form.innerHTML = `<input aria-label="Novo nome" value="${escapeHtml(currentName)}"><button class="save" title="Salvar">✓</button><button class="cancel" type="button" title="Cancelar">×</button>`;
+  const input = form.querySelector("input");
+  const reset = () => { label.textContent = currentName; };
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const value = input.value.trim();
+    if (!value || value === currentName) return reset();
+    input.disabled = true;
+    try { await save(value); }
+    catch (error) { input.disabled = false; alert("Não foi possível renomear: " + error.message); }
+  });
+  form.querySelector(".cancel").addEventListener("click", reset);
+  label.appendChild(form);
+  input.focus();
+  input.select();
+}
+
+function showNewFolderEditor(el, parent) {
+  const toolbar = el.querySelector(".library-content-toolbar");
+  if (!toolbar || toolbar.querySelector(".new-folder-form")) return;
+  const form = document.createElement("form");
+  form.className = "new-folder-form";
+  form.innerHTML = '<input aria-label="Nome da nova pasta" placeholder="Nome da nova pasta" autofocus><button class="primary small">Criar</button><button class="ghost small cancel" type="button">Cancelar</button>';
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = form.querySelector("input").value.trim();
+    if (!name) return form.querySelector("input").focus();
+    try {
+      await api("/api/mkdir", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parent, name }) });
+      await renderLibraryContent(el, parent);
+    } catch (error) { alert("Não foi possível criar a pasta: " + error.message); }
+  });
+  form.querySelector(".cancel").addEventListener("click", () => form.remove());
+  toolbar.appendChild(form);
+  form.querySelector("input").focus();
+}
+
+async function renderLibraryContent(el, folder) {
+  const box = el.querySelector(".library-content");
+  box.innerHTML = '<div class="library-loading">Carregando conteúdo…</div>';
   try {
-    const data = await api("/api/scan?path=" + encodeURIComponent(folder));
-    box.innerHTML = "";
-    if (!data.videos.length) {
-      box.innerHTML = '<div class="empty-state">Nenhum vídeo nesta pasta.</div>';
-    } else {
-      let idx = 0;
-      for (const v of data.videos) {
-        const currentIdx = idx;
-        const resolutionBadge = v.name.includes("1080") ? "FHD" : (v.name.includes("2160") || v.name.includes("4k") || v.name.includes("4K") ? "4K" : "HD");
-        const formatLabel = v.ext.replace(".", "").toUpperCase();
-        const item = document.createElement("div");
-        item.className = "lib-video";
-        item.innerHTML = `
-          <div class="lv-thumb">
-            <img loading="lazy" src="/api/thumb?path=${encodeURIComponent(v.path)}" alt="" onerror="this.style.display='none';this.parentElement.classList.add('nothumb')">
-          </div>
-          <div class="lv-details">
-            <div class="lv-top"><span class="lv-name">${escapeHtml(v.name)}</span></div>
-            <div class="lv-meta-row">
-              <span class="match-percentage">NA BIBLIOTECA</span>
-              <span class="badge-hq">${resolutionBadge}</span>
-              <span class="badge-ext">${formatLabel}</span>
-              <span class="file-size">${fmtBytes(v.size)}</span>
-            </div>
-            <div class="lv-actions">
-              <button class="play">▶ Assistir</button>
-              <a class="dl" href="/api/file?path=${encodeURIComponent(v.path)}" download="${escapeHtml(v.name)}">⬇</a>
-              <button class="del">🗑</button>
-            </div>
-          </div>`;
-        item.querySelector(".play").addEventListener("click", () => playVideo(v.path, v.name, data.videos, currentIdx));
-        item.querySelector(".del").addEventListener("click", () => deleteVideo(v, item, el, folder));
-        box.appendChild(item);
-        idx++;
-      }
-    }
-    box.classList.remove("hidden");
-    el.classList.add("expanded");
-    btn.textContent = "Fechar";
-  } catch (e) {
-    box.innerHTML = `<div class="empty-state">Erro: ${escapeHtml(e.message)}</div>`;
-    box.classList.remove("hidden"); btn.textContent = "Ver Conteúdo";
+    const data = await api("/api/folder-content?path=" + encodeURIComponent(folder));
+    box.dataset.currentPath = data.path;
+    const isRoot = data.path === data.root;
+    box.innerHTML = `
+      <div class="library-content-toolbar">
+        <button class="ghost small content-up" ${isRoot ? "disabled" : ""}>↑ Voltar</button>
+        <div class="library-breadcrumb" title="${escapeHtml(data.path)}">${escapeHtml(data.path)}</div>
+        <button class="ghost small content-new-folder">＋ Nova pasta</button>
+      </div>
+      <div class="library-content-summary">${data.dirs.length} pasta(s) · ${data.videos.length} vídeo(s)</div>
+      <div class="library-content-grid"></div>`;
+    const grid = box.querySelector(".library-content-grid");
+    data.dirs.forEach((dir) => {
+      const item = document.createElement("button");
+      item.className = "library-directory";
+      item.innerHTML = `<span class="library-directory-icon">📁</span><span class="library-directory-name">${escapeHtml(dir.name)}</span><span class="library-directory-action">Abrir →</span>`;
+      item.addEventListener("click", () => renderLibraryContent(el, dir.path));
+      grid.appendChild(item);
+    });
+    data.videos.forEach((video, index) => grid.appendChild(createLibraryVideoCard(video, data.videos, index, el, data.path)));
+    if (!data.dirs.length && !data.videos.length) grid.innerHTML = '<div class="empty-state library-empty">Esta pasta está vazia. Crie uma subpasta ou adicione vídeos aqui.</div>';
+    box.querySelector(".content-up").addEventListener("click", () => { if (data.parent) renderLibraryContent(el, data.parent); });
+    box.querySelector(".content-new-folder").addEventListener("click", () => showNewFolderEditor(el, data.path));
+  } catch (error) {
+    box.innerHTML = `<div class="empty-state">Erro ao abrir o conteúdo: ${escapeHtml(error.message)}</div>`;
   }
+}
+
+function createLibraryVideoCard(v, playlist, index, folderEl, currentFolder) {
+  const resolutionBadge = v.name.includes("1080") ? "FHD" : (v.name.includes("2160") || /4k/i.test(v.name) ? "4K" : "HD");
+  const formatLabel = v.ext.replace(".", "").toUpperCase();
+  const item = document.createElement("div");
+  item.className = "lib-video library-video-card";
+  item.innerHTML = `
+    <div class="lv-thumb">
+      <img loading="lazy" src="/api/thumb?path=${encodeURIComponent(v.path)}" alt="" onerror="this.style.display='none';this.parentElement.classList.add('nothumb')">
+      <button class="thumbnail-watch-now">▶ Assistir agora</button>
+    </div>
+    <div class="lv-details">
+      <div class="lv-top"><span class="lv-name">${escapeHtml(v.name)}</span></div>
+      <div class="lv-meta-row"><span class="match-percentage">NA BIBLIOTECA</span><span class="badge-hq">${resolutionBadge}</span><span class="badge-ext">${formatLabel}</span><span class="file-size">${fmtBytes(v.size)}</span></div>
+      <div class="lv-actions">
+        <button class="edit" title="Renomear vídeo" aria-label="Renomear vídeo">✎</button>
+        <a class="dl" href="/api/file?path=${encodeURIComponent(v.path)}" download="${escapeHtml(v.name)}" title="Baixar">⬇</a>
+        <button class="del" title="Excluir vídeo" aria-label="Excluir vídeo">🗑</button>
+      </div>
+    </div>`;
+  item.querySelector(".thumbnail-watch-now").addEventListener("click", (event) => { event.stopPropagation(); playVideo(v.path, v.name, playlist, index); });
+  item.querySelector(".edit").addEventListener("click", () => showInlineNameEditor(item.querySelector(".lv-name"), v.name, async (name) => {
+    await api("/api/file", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: v.path, name }) });
+    await renderLibraryContent(folderEl, currentFolder);
+    loadHome();
+  }));
+  item.querySelector(".del").addEventListener("click", () => deleteVideo(v, item, folderEl, currentFolder));
+  return item;
 }
 
 async function removeFolder(folder, el) {
@@ -510,8 +634,8 @@ async function deleteVideo(v, item, folderEl, folder) {
     await api("/api/file", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: v.path }) });
     item.remove();
     if (folderEl.querySelector(".lf-count")) {
-      const box = folderEl.querySelector(".lib-videos");
-      const remaining = box ? box.querySelectorAll(".lib-video").length : 0;
+      const box = folderEl.querySelector(".library-content-grid");
+      const remaining = box ? box.querySelectorAll(".library-video-card").length : 0;
       folderEl.querySelector(".lf-count").textContent = remaining + " vídeo(s)";
     }
     loadLibrary();
@@ -520,16 +644,44 @@ async function deleteVideo(v, item, folderEl, folder) {
 }
 
 async function clearHistory() {
-  if (!confirm("Limpar todo o histórico da biblioteca?\n(os arquivos no disco NÃO serão apagados)")) return;
+  if (!confirm("Remover todas as pastas do catálogo?\n(os arquivos no disco NÃO serão apagados)")) return;
   await api("/api/history", { method: "DELETE" });
   await loadLibrary();
   loadHome();
 }
 
 // ---------- Tela Início (Netflix Grid) ----------
+function createVideoCard(video, playlist = [], index = -1, history = null) {
+  const item = document.createElement("div");
+  const progress = history && history.duration > 0
+    ? Math.max(0, Math.min(100, (history.position / history.duration) * 100)) : 0;
+  const resumeText = history && history.position > 5 && !history.completed
+    ? `Continuar de ${fmtDuration(history.position)}` : "Assistir agora";
+  item.className = "lib-video";
+  item.innerHTML = `
+    <div class="lv-thumb">
+      <img loading="lazy" src="/api/thumb?path=${encodeURIComponent(video.path)}" alt="" onerror="this.style.display='none';this.parentElement.classList.add('nothumb')">
+      <button class="thumbnail-watch-now">▶ ${resumeText}</button>
+      ${history ? `<div class="watch-progress"><i style="width:${progress}%"></i></div>` : ""}
+    </div>
+    <div class="lv-details">
+      <div class="lv-top"><span class="lv-name">${escapeHtml(video.name)}</span></div>
+      <div class="lv-meta-row"><span class="match-percentage">${history && !history.completed ? `FALTAM ${fmtDuration(Math.max(0, history.duration - history.position))}` : "ÚLTIMOS VISTOS"}</span></div>
+    </div>`;
+  item.querySelector(".thumbnail-watch-now").addEventListener("click", (event) => {
+    event.stopPropagation();
+    playVideo(video.path, video.name, playlist, index, history?.position || 0);
+  });
+  item.addEventListener("click", () => playVideo(video.path, video.name, playlist, index, history?.position || 0));
+  return item;
+}
+
 async function loadHome() {
   try {
-    const folders = await api("/api/library");
+    const [folders, watchHistory] = await Promise.all([
+      api("/api/library"), api("/api/watch-history")
+    ]);
+    const recentHistory = watchHistory;
     const homeRows = $("homeRows");
     homeRows.innerHTML = "";
     heroVideo = null;
@@ -539,11 +691,35 @@ async function loadHome() {
     clearTimeout(heroSlideTimer);
     resetHomeHero();
     
-    if (!folders.length) {
+    if (!folders.length && !recentHistory.length) {
       $("emptyHome").classList.remove("hidden");
       return;
     }
     $("emptyHome").classList.add("hidden");
+
+    if (recentHistory.length) {
+      const row = document.createElement("div");
+      row.className = "home-row continue-row";
+      row.innerHTML = `
+        <div class="home-row-header">
+          <div class="home-row-left"><span class="home-row-title">Continuar assistindo</span></div>
+          <div class="home-row-actions"><button class="ghost small clear-watch-history">Limpar fila</button></div>
+        </div>
+        <div class="lib-videos"></div>`;
+      const container = row.querySelector(".lib-videos");
+      recentHistory.forEach((entry) => {
+        const item = createVideoCard(entry, [], -1, entry);
+        container.appendChild(item);
+      });
+      row.querySelector(".clear-watch-history").addEventListener("click", async () => {
+        if (!confirm("Limpar a fila de últimos vistos?")) return;
+        await api("/api/watch-history", { method: "DELETE" });
+        loadHome();
+      });
+      homeRows.appendChild(row);
+      applyCatalogFilter();
+      limitRecentVideoRows(row);
+    }
     
     for (const f of folders) {
       const row = document.createElement("div");
@@ -614,6 +790,7 @@ async function loadHome() {
               item.innerHTML = `
                 <div class="lv-thumb">
                   <img loading="lazy" src="/api/thumb?path=${encodeURIComponent(v.path)}" alt="" onerror="this.style.display='none';this.parentElement.classList.add('nothumb')">
+                  <button class="thumbnail-watch-now">▶ Assistir agora</button>
                 </div>
                 <div class="lv-details">
                   <div class="lv-top"><span class="lv-name">${escapeHtml(v.name)}</span></div>
@@ -624,12 +801,11 @@ async function loadHome() {
                     <span class="file-size">${fmtBytes(v.size)}</span>
                   </div>
                   <div class="lv-actions">
-                    <button class="play">▶ Assistir</button>
                     <a class="dl" href="/api/file?path=${encodeURIComponent(v.path)}" download="${escapeHtml(v.name)}">⬇</a>
                     <button class="del">🗑</button>
                   </div>
                 </div>`;
-              item.querySelector(".play").addEventListener("click", () => playVideo(v.path, v.name, data.videos, currentIdx));
+              item.querySelector(".thumbnail-watch-now").addEventListener("click", (event) => { event.stopPropagation(); playVideo(v.path, v.name, data.videos, currentIdx); });
               item.querySelector(".del").addEventListener("click", () => deleteVideo(v, item, row, f.path));
               item.addEventListener("click", (event) => {
                 if (event.target.closest(".lv-actions")) return;
@@ -697,7 +873,7 @@ function setHomeHero(video, playlist, folderName) {
   heroPlaylist = playlist;
   $("homeHeroTitle").textContent = cleanDisplayTitle(video.name) || "Em destaque";
   $("homeHeroDescription").textContent = `Em destaque na coleção ${folderName}. Pronto para assistir diretamente da sua biblioteca local.`;
-  $("heroPrimaryAction").innerHTML = '<span aria-hidden="true">▦</span> Ver catálogo';
+  $("heroPrimaryAction").innerHTML = '<span aria-hidden="true">▶</span> Assistir agora';
   const art = $("homeHeroArt");
   art.classList.remove("has-image");
   art.style.backgroundImage = `url("/api/thumb?path=${encodeURIComponent(video.path)}")`;
@@ -842,14 +1018,20 @@ function showPrivacyError(msg) {
 // ---------- Player Customizado Cinema ----------
 $("playerClose").addEventListener("click", closePlayer);
 
-function playVideo(path, name, playlist = [], index = -1) {
+function playVideo(path, name, playlist = [], index = -1, resumePosition = 0) {
+  // Salva e pausa a fonte anterior antes de trocar título/caminho; assim o
+  // evento pause não associa o progresso antigo ao vídeo novo.
+  const v = $("player");
+  savePlaybackProgress();
+  v.pause();
   currentPlaylist = playlist;
   currentPlaylistIndex = index;
+  pendingResumePosition = Math.max(0, Number(resumePosition) || 0);
+  lastProgressSave = 0;
 
   $("playerTitle").textContent = name;
   $("playerPath").textContent = path;
   
-  const v = $("player");
   const container = $("playerContainer");
   const overlay = $("playerOverlay");
   
@@ -900,6 +1082,7 @@ $("btnNext").addEventListener("click", playNextVideo);
 
 // Quando o vídeo atual termina, toca o próximo
 $("player").addEventListener("ended", () => {
+  savePlaybackProgress(true);
   if (currentPlaylistIndex >= 0 && currentPlaylistIndex < currentPlaylist.length - 1) {
     playNextVideo();
   } else {
@@ -910,6 +1093,7 @@ $("player").addEventListener("ended", () => {
 
 function closePlayer() {
   const v = $("player");
+  savePlaybackProgress();
   v.pause(); v.removeAttribute("src"); v.load();
   $("playerModal").classList.add("hidden");
   clearTimeout(playerControlsTimeout);
@@ -1063,10 +1247,39 @@ $("player").addEventListener("timeupdate", () => {
     $("progressBar").style.width = pct + "%";
     $("progressHandle").style.left = pct + "%";
   }
+  if (cur > 0 && (Date.now() - lastProgressSave > 5000)) savePlaybackProgress();
 });
 
 $("player").addEventListener("loadedmetadata", () => {
-  $("durationTime").textContent = fmtDuration($("player").duration);
+  const v = $("player");
+  $("durationTime").textContent = fmtDuration(v.duration);
+  if (pendingResumePosition > 0 && v.duration > 0) {
+    v.currentTime = Math.min(pendingResumePosition, Math.max(0, v.duration - 1));
+  }
+  pendingResumePosition = 0;
+});
+
+$("player").addEventListener("pause", () => savePlaybackProgress());
+
+function savePlaybackProgress(completed = false) {
+  const v = $("player");
+  const path = $("playerPath").textContent;
+  if (!path || !Number.isFinite(v.currentTime) || !Number.isFinite(v.duration) || v.duration <= 0) return;
+  lastProgressSave = Date.now();
+  const payload = JSON.stringify({
+    path,
+    position: completed ? v.duration : v.currentTime,
+    duration: v.duration,
+  });
+  fetch("/api/watch-history", { method: "POST", headers: { "Content-Type": "application/json" }, body: payload }).catch(() => {});
+}
+
+window.addEventListener("beforeunload", () => {
+  const v = $("player");
+  const path = $("playerPath").textContent;
+  if (path && v.duration > 0 && Number.isFinite(v.currentTime)) {
+    navigator.sendBeacon("/api/watch-history", new Blob([JSON.stringify({ path, position: v.currentTime, duration: v.duration })], { type: "application/json" }));
+  }
 });
 
 // Seek Drag/Click Events

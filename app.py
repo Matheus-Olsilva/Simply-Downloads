@@ -14,7 +14,7 @@ import queue as _queue
 import time
 import re
 import html as _html
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 from pathlib import Path
 
@@ -35,6 +35,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 LIBRARY_FILE = os.path.join(BASE, "library.json")
 CONFIG_FILE = os.path.join(BASE, "config.json")
 FOLDERS_CONFIG_FILE = os.path.join(BASE, "folders_config.json")
+WATCH_HISTORY_FILE = os.path.join(BASE, "watch_history.json")
 THUMB_DIR = os.path.join(BASE, ".thumbs")
 
 VIDEO_EXTS = {
@@ -60,6 +61,11 @@ CONFIG_LOCK = threading.Lock()
 FOLDERS_CONFIG: dict = {}
 FOLDERS_CONFIG_LOCK = threading.Lock()
 UNLOCKED_FOLDERS: set[str] = set()
+
+# Posição de reprodução por arquivo, persistida independentemente da lista de
+# pastas para que seja possível continuar assistindo após reiniciar o app.
+WATCH_HISTORY: dict[str, dict] = {}
+WATCH_HISTORY_LOCK = threading.Lock()
 
 PLAYCACHE_DIR = os.path.join(BASE, ".playcache")
 _thumb_lock = threading.Lock()
@@ -168,11 +174,88 @@ def list_videos(path: str):
     return videos, path
 
 
+def clean_entry_name(value: str, *, current_ext: str = "") -> str:
+    """Valida um nome digitado no app, sem permitir mudar de diretório."""
+    name = (value or "").strip().replace("/", "_").replace("\\", "_")
+    if name in ("", ".", "..") or name.startswith("."):
+        raise ValueError("Escolha um nome válido.")
+    if current_ext:
+        base, entered_ext = os.path.splitext(name)
+        # O campo edita o título, não o formato do arquivo. Mantemos sempre
+        # a extensão original, inclusive se a pessoa digitá-la por engano.
+        name = (base if entered_ext else name) + current_ext
+    return name
+
+
+def library_root_for(path: str) -> str | None:
+    """Retorna a raiz cadastrada que contém ``path`` (a mais específica)."""
+    path = safe_dir(path)
+    with LIB_LOCK:
+        roots = list(LIBRARY)
+    matches = [root for root in roots if path == root or path.startswith(root + os.sep)]
+    return max(matches, key=len) if matches else None
+
+
+def library_path_is_locked(path: str) -> bool:
+    """Pastas filhas herdam a proteção da coleção cadastrada."""
+    root = library_root_for(path)
+    if not root:
+        return False
+    with FOLDERS_CONFIG_LOCK:
+        return bool(FOLDERS_CONFIG.get(root, {}).get("private") and root not in UNLOCKED_FOLDERS)
+
+
 # ---- fallback para páginas que não têm extrator no yt-dlp ----
 _MEDIA_RE = re.compile(
     r"(?:https?:)?//[^\"'<>\\ ]+|(?:[^\"'<>\\ ]+\.(?:m3u8|mp4|webm|mpd)(?:\?[^\"'<>\\ ]*)?)",
     re.IGNORECASE,
 )
+
+_DIRECT_MEDIA_RE = re.compile(r"\.(?:m3u8|mp4|webm|mpd)(?:$|[?#])", re.IGNORECASE)
+_BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "Chrome/131 Safari/537.36"
+)
+
+
+def _is_direct_media_url(url: str) -> bool:
+    """Indica se ``url`` aponta diretamente para um arquivo/stream de vídeo."""
+    parsed = urlparse(url)
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc) and bool(
+        _DIRECT_MEDIA_RE.search(url)
+    )
+
+
+def _media_headers(url: str, referer: str | None = None) -> dict[str, str]:
+    """Cabeçalhos necessários para hosts de mídia que bloqueiam hotlinking."""
+    headers = {"User-Agent": _BROWSER_USER_AGENT}
+    if referer:
+        headers["Referer"] = referer
+
+    # Os arquivos em v*.erome.com devolvem 403 para clientes sem Referer,
+    # embora sejam acessíveis a partir do próprio site.
+    host = (urlparse(url).hostname or "").lower()
+    if host == "erome.com" or host.endswith(".erome.com"):
+        headers.setdefault("Referer", "https://www.erome.com/")
+    return headers
+
+
+def _direct_media_info(url: str) -> dict:
+    """Monta metadados mínimos sem pedir ao servidor para analisar o arquivo."""
+    parsed = urlparse(url)
+    filename = unquote(os.path.basename(parsed.path)) or parsed.netloc
+    stem, ext = os.path.splitext(filename)
+    ext = ext.lstrip(".").lower() or "mp4"
+    return {
+        "id": filename,
+        "title": stem or filename,
+        "url": url,
+        "ext": ext,
+        "formats": [{
+            "format_id": "best", "url": url, "ext": ext,
+            "vcodec": "unknown", "acodec": "unknown",
+        }],
+    }
 
 
 def _clean_media_url(value: str, page_url: str) -> str:
@@ -256,13 +339,18 @@ def _find_embedded_media(page_url: str, _depth: int = 0) -> tuple[str | None, st
 
 def _extract_info_with_fallback(ydl, url: str):
     """Extrai normalmente; se a página não for suportada, tenta sua mídia embutida."""
+    # Não peça metadados a um CDN para uma URL que já é a mídia. Alguns deles
+    # (como Erome) recusam a requisição sem cabeçalhos de navegação e o formato
+    # pode ser baixado diretamente pelo yt-dlp com os cabeçalhos adequados.
+    if _is_direct_media_url(url):
+        return _direct_media_info(url)
     try:
         return ydl.extract_info(url, download=False)
     except Exception as original_error:
         media_url, page_title = _find_embedded_media(url)
         if media_url:
             try:
-                ydl.params.setdefault("http_headers", {}).update({"Referer": url})
+                ydl.params.setdefault("http_headers", {}).update(_media_headers(media_url, url))
                 info = ydl.extract_info(media_url, download=False)
             except Exception:
                 # Ainda permite baixar URLs diretas que o yt-dlp não consegue analisar.
@@ -358,6 +446,45 @@ def save_folders_config():
             json.dump(FOLDERS_CONFIG, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
+
+
+def load_watch_history():
+    global WATCH_HISTORY
+    try:
+        with open(WATCH_HISTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        WATCH_HISTORY = data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        WATCH_HISTORY = {}
+
+
+def save_watch_history():
+    try:
+        tmp = WATCH_HISTORY_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(WATCH_HISTORY, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, WATCH_HISTORY_FILE)
+    except OSError:
+        pass
+
+
+def is_locked_private_path(path: str) -> bool:
+    """Indica se path pertence a uma pasta privada que está trancada."""
+    path = os.path.abspath(path)
+    with FOLDERS_CONFIG_LOCK:
+        for folder, config in FOLDERS_CONFIG.items():
+            if not config.get("private", False):
+                continue
+            folder = safe_dir(folder)
+            if folder in UNLOCKED_FOLDERS:
+                continue
+            try:
+                if os.path.commonpath((path, folder)) == folder:
+                    return True
+            except ValueError:
+                # Caminhos em volumes diferentes não podem pertencer à pasta.
+                continue
+    return False
 
 
 def ffprobe_duration(path: str) -> float:
@@ -513,13 +640,35 @@ def api_scan():
     if not os.path.isdir(path):
         return jsonify({"error": "Pasta não encontrada."}), 404
 
-    with FOLDERS_CONFIG_LOCK:
-        folder_cfg = FOLDERS_CONFIG.get(path, {})
-        if folder_cfg.get("private", False) and (path not in UNLOCKED_FOLDERS):
-            return jsonify({"error": "Esta pasta está protegida por senha.", "locked": True}), 403
+    if library_path_is_locked(path):
+        return jsonify({"error": "Esta pasta está protegida por senha.", "locked": True}), 403
 
     videos, resolved = list_videos(path)
     return jsonify({"path": resolved, "videos": videos})
+
+
+@app.route("/api/folder-content", methods=["GET"])
+def api_folder_content():
+    """Lista a pasta aberta na biblioteca, incluindo suas subpastas."""
+    path = safe_dir(request.args.get("path", ""))
+    root = library_root_for(path)
+    if not root:
+        return jsonify({"error": "Esta pasta não pertence à biblioteca."}), 403
+    if not os.path.isdir(path):
+        return jsonify({"error": "Pasta não encontrada."}), 404
+    if library_path_is_locked(path):
+        return jsonify({"error": "Esta pasta está protegida por senha.", "locked": True}), 403
+
+    dirs, resolved = list_dirs(path)
+    videos, _ = list_videos(path)
+    parent = os.path.dirname(resolved) if resolved != root else None
+    return jsonify({
+        "path": resolved,
+        "root": root,
+        "parent": parent,
+        "dirs": [{"name": name, "path": os.path.join(resolved, name)} for name in dirs],
+        "videos": videos,
+    })
 
 
 @app.route("/api/thumb", methods=["GET"])
@@ -593,6 +742,68 @@ def api_history_clear():
     return jsonify({"ok": True})
 
 
+@app.route("/api/watch-history", methods=["GET", "POST", "DELETE"])
+def api_watch_history():
+    """Histórico de reprodução e ponto para retomar cada vídeo."""
+    if request.method == "DELETE":
+        with WATCH_HISTORY_LOCK:
+            WATCH_HISTORY.clear()
+            save_watch_history()
+        return jsonify({"ok": True})
+
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        path = os.path.abspath(os.path.expanduser(data.get("path", "")))
+        if not path or not os.path.isfile(path) or os.path.splitext(path)[1].lower() not in VIDEO_EXTS:
+            return jsonify({"error": "Vídeo não encontrado."}), 404
+        try:
+            position = max(0.0, float(data.get("position", 0)))
+            duration = max(0.0, float(data.get("duration", 0)))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Progresso inválido."}), 400
+        # Ao chegar ao fim, a próxima reprodução começa do início.
+        completed = duration > 0 and position >= duration - min(15, duration * .04)
+        with WATCH_HISTORY_LOCK:
+            WATCH_HISTORY[path] = {
+                "position": 0 if completed else position,
+                "duration": duration,
+                "completed": completed,
+                "last_watched": int(time.time()),
+            }
+            # Evita que o arquivo de estado cresça sem limite.
+            if len(WATCH_HISTORY) > 100:
+                oldest = sorted(WATCH_HISTORY, key=lambda p: WATCH_HISTORY[p].get("last_watched", 0))[:-100]
+                for old_path in oldest:
+                    WATCH_HISTORY.pop(old_path, None)
+            save_watch_history()
+        return jsonify({"ok": True})
+
+    with WATCH_HISTORY_LOCK:
+        entries = []
+        changed = False
+        for path, entry in list(WATCH_HISTORY.items()):
+            if not os.path.isfile(path):
+                WATCH_HISTORY.pop(path, None)
+                changed = True
+                continue
+            # O histórico é independente da biblioteca, mas não deve revelar
+            # vídeos de uma pasta privada enquanto ela estiver trancada.
+            if is_locked_private_path(path):
+                continue
+            entries.append({
+                "path": path,
+                "name": os.path.basename(path),
+                "position": float(entry.get("position", 0) or 0),
+                "duration": float(entry.get("duration", 0) or 0),
+                "completed": bool(entry.get("completed", False)),
+                "last_watched": int(entry.get("last_watched", 0) or 0),
+            })
+        if changed:
+            save_watch_history()
+    entries.sort(key=lambda entry: entry["last_watched"], reverse=True)
+    return jsonify(entries[:30])
+
+
 @app.route("/api/folder/unlock", methods=["POST"])
 def api_folder_unlock():
     data = request.get_json(silent=True) or {}
@@ -649,6 +860,93 @@ def api_folder_privacy():
                 
         save_folders_config()
     return jsonify({"ok": True})
+
+
+@app.route("/api/library", methods=["PUT"])
+def api_library_rename():
+    """Renomeia uma coleção e mantém os metadados locais apontando para ela."""
+    data = request.get_json(silent=True) or {}
+    old_path = safe_dir(data.get("path") or "")
+    try:
+        name = clean_entry_name(data.get("name") or "")
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+
+    with LIB_LOCK:
+        if old_path not in LIBRARY:
+            return jsonify({"error": "Biblioteca não encontrada."}), 404
+    if not os.path.isdir(old_path):
+        return jsonify({"error": "Pasta não encontrada."}), 404
+
+    new_path = os.path.join(os.path.dirname(old_path), name)
+    if new_path == old_path:
+        return jsonify({"ok": True, "path": old_path})
+    if os.path.exists(new_path):
+        return jsonify({"error": "Já existe uma pasta com este nome."}), 409
+    try:
+        os.rename(old_path, new_path)
+    except OSError as error:
+        return jsonify({"error": f"Não foi possível renomear: {error}"}), 500
+
+    def moved_path(value: str) -> str:
+        return new_path + value[len(old_path):] if value == old_path or value.startswith(old_path + os.sep) else value
+
+    with LIB_LOCK:
+        LIBRARY[:] = [moved_path(path) for path in LIBRARY]
+        save_library()
+    with FOLDERS_CONFIG_LOCK:
+        FOLDERS_CONFIG_COPY = {moved_path(path): cfg for path, cfg in FOLDERS_CONFIG.items()}
+        FOLDERS_CONFIG.clear()
+        FOLDERS_CONFIG.update(FOLDERS_CONFIG_COPY)
+        UNLOCKED_FOLDERS_COPY = {moved_path(path) for path in UNLOCKED_FOLDERS}
+        UNLOCKED_FOLDERS.clear()
+        UNLOCKED_FOLDERS.update(UNLOCKED_FOLDERS_COPY)
+        save_folders_config()
+    with WATCH_HISTORY_LOCK:
+        WATCH_HISTORY_COPY = {moved_path(path): entry for path, entry in WATCH_HISTORY.items()}
+        WATCH_HISTORY.clear()
+        WATCH_HISTORY.update(WATCH_HISTORY_COPY)
+        save_watch_history()
+    with CONFIG_LOCK:
+        default_dir = CONFIG.get("default_out_dir")
+        if isinstance(default_dir, str):
+            CONFIG["default_out_dir"] = moved_path(default_dir)
+            save_config()
+    return jsonify({"ok": True, "path": new_path})
+
+
+@app.route("/api/file", methods=["PUT"])
+def api_file_rename():
+    """Renomeia um vídeo, preservando sua extensão quando ela não for informada."""
+    data = request.get_json(silent=True) or {}
+    old_path = os.path.abspath(os.path.expanduser(data.get("path", "")))
+    if not old_path or not os.path.isfile(old_path):
+        return jsonify({"error": "Arquivo não encontrado."}), 404
+    ext = os.path.splitext(old_path)[1].lower()
+    if ext not in VIDEO_EXTS:
+        return jsonify({"error": "Só é permitido renomear arquivos de vídeo."}), 400
+    try:
+        name = clean_entry_name(data.get("name") or "", current_ext=ext)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    new_path = os.path.join(os.path.dirname(old_path), name)
+    if new_path == old_path:
+        return jsonify({"ok": True, "path": old_path, "name": os.path.basename(old_path)})
+    if os.path.exists(new_path):
+        return jsonify({"error": "Já existe um arquivo com este nome."}), 409
+    try:
+        os.rename(old_path, new_path)
+        st = os.stat(new_path)
+    except OSError as error:
+        return jsonify({"error": f"Não foi possível renomear: {error}"}), 500
+    with WATCH_HISTORY_LOCK:
+        if old_path in WATCH_HISTORY:
+            WATCH_HISTORY[new_path] = WATCH_HISTORY.pop(old_path)
+            save_watch_history()
+    return jsonify({"ok": True, "video": {
+        "name": os.path.basename(new_path), "path": new_path,
+        "size": st.st_size, "mtime": int(st.st_mtime), "ext": ext,
+    }})
 
 
 @app.route("/api/file", methods=["DELETE"])
@@ -718,6 +1016,7 @@ def api_info():
         "noplaylist": True,
         "skip_download": True,
         "extract_flat": False,
+        "http_headers": _media_headers(url),
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -823,6 +1122,7 @@ def run_download(job_id: str, url: str, format_id: str, out_dir: str):
         "no_warnings": True,
         "noprogress": True,
         "progress_hooks": [hook],
+        "http_headers": _media_headers(url),
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -832,8 +1132,8 @@ def run_download(job_id: str, url: str, format_id: str, out_dir: str):
                 # Páginas sem extrator dedicado podem apontar para um arquivo
                 # ou playlist HLS no HTML. Tenta a mídia descoberta no fallback.
                 media_url, _ = _find_embedded_media(url)
-                ydl.params.setdefault("http_headers", {}).update({"Referer": url})
                 if media_url:
+                    ydl.params.setdefault("http_headers", {}).update(_media_headers(media_url, url))
                     ydl.download([media_url])
                 else:
                     iframe_error = original_error
@@ -958,6 +1258,7 @@ if __name__ == "__main__":
     load_library()
     load_config()
     load_folders_config()
+    load_watch_history()
     print(f"\n  Baixador de Vídeos Universal")
     print(f"  → http://{HOST}:{PORT}\n")
     app.run(host=HOST, port=PORT, threaded=True, debug=False)
